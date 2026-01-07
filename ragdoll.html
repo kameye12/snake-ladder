@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Ragdoll Thrower</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0f172a;
+        font-family: "Kanit", sans-serif;
+        overflow: hidden;
+        color: white;
+        user-select: none;
+      }
+
+      .home-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        padding: 8px 15px;
+        text-decoration: none;
+        border-radius: 20px;
+        font-size: 14px;
+        z-index: 100;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      #ui-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        pointer-events: none;
+        padding: 20px;
+        box-sizing: border-box;
+        display: flex;
+        justify-content: space-between;
+        z-index: 10;
+      }
+      .score-box {
+        font-size: 24px;
+        font-weight: bold;
+        text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+      }
+      .tutorial {
+        position: absolute;
+        bottom: 20px;
+        width: 100%;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 14px;
+        pointer-events: none;
+      }
+
+      /* Canvas จะถูกสร้างโดย Matter.js */
+      canvas {
+        display: block;
+        box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.5);
+      }
+
+      #overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.9);
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 50;
+      }
+      h1 {
+        font-size: 40px;
+        margin: 0 0 10px 0;
+        color: #f43f5e;
+      }
+      .btn-restart {
+        padding: 15px 40px;
+        font-size: 20px;
+        border: none;
+        border-radius: 50px;
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 20px;
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+      }
+    </style>
+  </head>
+  <body>
+    <a href="/" class="home-btn">🏠 Home</a>
+
+    <div id="ui-layer">
+      <div class="score-box">
+        LEVEL: <span id="level" style="color: #38bdf8">1</span>
+      </div>
+      <div class="score-box" style="font-size: 16px; text-align: right">
+        High Score: <span id="highscore">0</span><br />
+        <span style="font-size: 12px; color: #aaa">Leaderboard: Realtime</span>
+      </div>
+    </div>
+
+    <div class="tutorial">
+      🖱️ ใช้เมาส์ลากตัวตุ๊กตาแล้ว "เหวี่ยง" ไปหากล่องสีเขียว
+    </div>
+
+    <div id="overlay">
+      <h1>GAME OVER</h1>
+      <div style="font-size: 24px">
+        Max Level: <span id="final-level">1</span>
+      </div>
+      <button class="btn-restart" onclick="location.reload()">TRY AGAIN</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io("/ragdoll", { transports: ["websocket"] });
+
+      // --- Matter.js Setup ---
+      const Engine = Matter.Engine,
+        Render = Matter.Render,
+        Runner = Matter.Runner,
+        Body = Matter.Body,
+        Bodies = Matter.Bodies,
+        Composite = Matter.Composite,
+        Constraint = Matter.Constraint,
+        MouseConstraint = Matter.MouseConstraint,
+        Mouse = Matter.Mouse,
+        Events = Matter.Events;
+
+      // สร้าง Engine
+      const engine = Engine.create();
+      const world = engine.world;
+
+      // สร้าง Renderer
+      const render = Render.create({
+        element: document.body,
+        engine: engine,
+        options: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          wireframes: false, // แสดงสีจริง ไม่ใช่แค่เส้น
+          background: "#0f172a",
+        },
+      });
+
+      // --- Game Variables ---
+      let currentLevel = 1;
+      let ragdoll;
+      let target;
+      let obstacles = [];
+      let isGameOver = false;
+
+      // --- ฟังก์ชันสร้าง Ragdoll (คน) ---
+      function createRagdoll(x, y, scale = 1) {
+        const group = Body.nextGroup(true);
+        const headOptions = {
+          friction: 1,
+          frictionAir: 0.05,
+          render: { fillStyle: "#f43f5e" },
+          collisionFilter: { group: group },
+        };
+        const chestOptions = {
+          friction: 1,
+          frictionAir: 0.05,
+          render: { fillStyle: "#38bdf8" },
+          collisionFilter: { group: group },
+        };
+        const limbOptions = {
+          friction: 1,
+          frictionAir: 0.05,
+          render: { fillStyle: "#cbd5e1" },
+          collisionFilter: { group: group },
+        };
+
+        // ชิ้นส่วนร่างกาย
+        const head = Bodies.circle(x, y - 25 * scale, 15 * scale, headOptions);
+        const chest = Bodies.rectangle(
+          x,
+          y,
+          30 * scale,
+          40 * scale,
+          chestOptions
+        ); // ตัว
+        const leftArm = Bodies.rectangle(
+          x - 20 * scale,
+          y,
+          10 * scale,
+          30 * scale,
+          limbOptions
+        );
+        const rightArm = Bodies.rectangle(
+          x + 20 * scale,
+          y,
+          10 * scale,
+          30 * scale,
+          limbOptions
+        );
+        const leftLeg = Bodies.rectangle(
+          x - 10 * scale,
+          y + 30 * scale,
+          10 * scale,
+          30 * scale,
+          limbOptions
+        );
+        const rightLeg = Bodies.rectangle(
+          x + 10 * scale,
+          y + 30 * scale,
+          10 * scale,
+          30 * scale,
+          limbOptions
+        );
+
+        // ข้อต่อ (Joints)
+        const headToChest = Constraint.create({
+          bodyA: head,
+          bodyB: chest,
+          pointA: { x: 0, y: 15 * scale },
+          pointB: { x: 0, y: -20 * scale },
+          stiffness: 0.5,
+          length: 0,
+          render: { visible: false },
+        });
+
+        const chestToLeftArm = Constraint.create({
+          bodyA: chest,
+          bodyB: leftArm,
+          pointA: { x: -15 * scale, y: -15 * scale },
+          pointB: { x: 0, y: -12 * scale },
+          stiffness: 0.5,
+          length: 0,
+          render: { visible: false },
+        });
+
+        const chestToRightArm = Constraint.create({
+          bodyA: chest,
+          bodyB: rightArm,
+          pointA: { x: 15 * scale, y: -15 * scale },
+          pointB: { x: 0, y: -12 * scale },
+          stiffness: 0.5,
+          length: 0,
+          render: { visible: false },
+        });
+
+        const chestToLeftLeg = Constraint.create({
+          bodyA: chest,
+          bodyB: leftLeg,
+          pointA: { x: -10 * scale, y: 20 * scale },
+          pointB: { x: 0, y: -12 * scale },
+          stiffness: 0.5,
+          length: 0,
+          render: { visible: false },
+        });
+
+        const chestToRightLeg = Constraint.create({
+          bodyA: chest,
+          bodyB: rightLeg,
+          pointA: { x: 10 * scale, y: 20 * scale },
+          pointB: { x: 0, y: -12 * scale },
+          stiffness: 0.5,
+          length: 0,
+          render: { visible: false },
+        });
+
+        const person = Composite.create({
+          bodies: [head, chest, leftArm, rightArm, leftLeg, rightLeg],
+          constraints: [
+            headToChest,
+            chestToLeftArm,
+            chestToRightArm,
+            chestToLeftLeg,
+            chestToRightLeg,
+          ],
+        });
+
+        return person;
+      }
+
+      // --- สร้างด่าน ---
+      function loadLevel(level) {
+        // ล้างโลกเก่า (ยกเว้นพื้น/กำแพงหลัก ถ้ามี)
+        Composite.clear(world, false, true); // keepStatic=false (ลบหมดแล้วสร้างใหม่ดีกว่า)
+        engine.events = {}; // ล้าง event เก่า
+
+        // สร้างกำแพงรอบด้าน
+        const wallOpt = { isStatic: true, render: { fillStyle: "#1e293b" } };
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        Composite.add(world, [
+          Bodies.rectangle(width / 2, height + 50, width, 100, wallOpt), // พื้น
+          Bodies.rectangle(width / 2, -50, width, 100, wallOpt), // เพดาน
+          Bodies.rectangle(-50, height / 2, 100, height, wallOpt), // ซ้าย
+          Bodies.rectangle(width + 50, height / 2, 100, height, wallOpt), // ขวา
+        ]);
+
+        // สร้างตัว Ragdoll (เกิดด้านซ้ายเสมอ)
+        ragdoll = createRagdoll(150, height - 150);
+        Composite.add(world, ragdoll);
+
+        // สร้างเป้าหมาย (สีเขียว) - สุ่มตำแหน่งด้านขวา
+        const targetX = width - 100 - Math.random() * 200;
+        const targetY = height - 100 - Math.random() * (height / 2);
+        target = Bodies.rectangle(targetX, targetY, 60, 60, {
+          isStatic: true,
+          isSensor: true, // ทะลุได้ (เพื่อตรวจจับการชน)
+          render: {
+            fillStyle: "#22c55e",
+            strokeStyle: "#fff",
+            lineWidth: 3,
+          },
+          label: "Goal",
+        });
+
+        // Animation ให้เป้าหมายหมุน
+        Events.on(engine, "beforeUpdate", () => {
+          Body.rotate(target, 0.05);
+        });
+        Composite.add(world, target);
+
+        // สร้างอุปสรรค (สีแดง) - เพิ่มจำนวนตามเลเวล
+        const obsCount = Math.min(level + 1, 8);
+        for (let i = 0; i < obsCount; i++) {
+          const obsX = 300 + Math.random() * (width - 500);
+          const obsY = Math.random() * (height - 200) + 100;
+          const obs = Bodies.rectangle(
+            obsX,
+            obsY,
+            20 + Math.random() * 80,
+            200,
+            {
+              isStatic: true,
+              render: { fillStyle: "#ef4444" },
+              angle: Math.random() * Math.PI,
+              label: "Danger",
+            }
+          );
+          Composite.add(world, obs);
+        }
+
+        // ระบบเมาส์ (Mouse Control)
+        const mouse = Mouse.create(render.canvas);
+        const mouseConstraint = MouseConstraint.create(engine, {
+          mouse: mouse,
+          constraint: {
+            stiffness: 0.1, // ดึงหยุ่นๆ หน่อย
+            render: { visible: false },
+          },
+        });
+        Composite.add(world, mouseConstraint);
+        render.mouse = mouse;
+
+        // ตรวจจับการชน
+        Events.on(engine, "collisionStart", (event) => {
+          event.pairs.forEach((pair) => {
+            const { bodyA, bodyB } = pair;
+
+            // เช็คว่า Ragdoll ชน Goal ไหม
+            if (
+              (isRagdollPart(bodyA) && bodyB.label === "Goal") ||
+              (isRagdollPart(bodyB) && bodyA.label === "Goal")
+            ) {
+              levelUp();
+            }
+
+            // เช็คว่า Ragdoll ชน Danger ไหม
+            if (
+              (isRagdollPart(bodyA) && bodyB.label === "Danger") ||
+              (isRagdollPart(bodyB) && bodyA.label === "Danger")
+            ) {
+              gameOver();
+            }
+          });
+        });
+      }
+
+      function isRagdollPart(body) {
+        // เช็คว่า Body นี้เป็นส่วนหนึ่งของ Ragdoll ที่เราสร้างไหม
+        return ragdoll.bodies.includes(body);
+      }
+
+      function levelUp() {
+        if (isGameOver) return;
+        // เอฟเฟกต์ Slow motion นิดนึง
+        engine.timing.timeScale = 0.1;
+        setTimeout(() => {
+          engine.timing.timeScale = 1;
+          currentLevel++;
+          document.getElementById("level").innerText = currentLevel;
+          socket.emit("updateLevel", currentLevel); // ส่งคะแนน
+          loadLevel(currentLevel);
+        }, 500);
+      }
+
+      function gameOver() {
+        if (isGameOver) return;
+        isGameOver = true;
+        document.getElementById("final-level").innerText = currentLevel;
+        document.getElementById("overlay").style.display = "flex";
+      }
+
+      // --- Start ---
+      Render.run(render);
+      const runner = Runner.create();
+      Runner.run(runner, engine);
+
+      loadLevel(1);
+
+      // --- Socket Leaderboard ---
+      socket.on("updateLeaderboard", (scores) => {
+        // หา High Score ของเรา
+        const myScore = scores[socket.id] || 0;
+        document.getElementById("highscore").innerText = myScore;
+      });
+
+      // Resize handler
+      window.addEventListener("resize", () => {
+        render.canvas.width = window.innerWidth;
+        render.canvas.height = window.innerHeight;
+        loadLevel(currentLevel); // รีเซ็ตด่านถ้าจอเปลี่ยนขนาด
+      });
+    </script>
+  </body>
+</html>

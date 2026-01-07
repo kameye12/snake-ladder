@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Typing Defense (Easy Mode)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Kanit:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0d0d0d;
+        color: #00ff41;
+        font-family: "Kanit", sans-serif; /* เปลี่ยนฟอนต์หลักให้อ่านง่าย */
+        overflow: hidden;
+        user-select: none;
+      }
+
+      /* UI Layer */
+      #ui-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 10;
+        padding: 20px;
+        box-sizing: border-box;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .hud-box {
+        background: rgba(0, 0, 0, 0.9); /* พื้นหลังทึบขึ้น */
+        border: 2px solid #00ff41;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        text-shadow: 0 0 5px #00ff41;
+        font-weight: 800;
+      }
+      .stat {
+        font-size: 20px;
+        margin-top: 5px;
+        font-weight: 600;
+      }
+      .danger {
+        color: #ff3838;
+        text-shadow: 0 0 5px red;
+        letter-spacing: 5px;
+      }
+
+      /* พื้นที่เกม */
+      #game-area {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        /* พื้นหลังเรียบๆ เพื่อให้อ่านตัวหนังสือออกง่าย */
+        background: #111;
+      }
+
+      /* เส้นขอบเขตตาย */
+      #danger-line {
+        position: absolute;
+        bottom: 60px;
+        width: 100%;
+        height: 3px;
+        background: #ff3838;
+        box-shadow: 0 0 20px #ff3838;
+        z-index: 5;
+      }
+      #danger-line::after {
+        content: "DANGER ZONE";
+        position: absolute;
+        right: 20px;
+        bottom: 10px;
+        color: #ff3838;
+        font-size: 12px;
+        opacity: 0.7;
+      }
+
+      /* --- ปรับปรุงตัวปีศาจ (ให้อ่านง่ายสุดๆ) --- */
+      .monster {
+        position: absolute;
+        color: white;
+        font-family: "Kanit", sans-serif; /* ใช้ฟอนต์อ่านง่าย */
+        font-weight: 800; /* ตัวหนา */
+        font-size: 28px; /* ตัวใหญ่สะใจ (เดิม 20px) */
+
+        background: #000; /* พื้นหลังดำทึบ ไม่โปร่งแสง */
+        padding: 8px 16px;
+        border: 2px solid #555; /* ขอบสีเทา */
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+
+        transform: translateX(-50%);
+        white-space: nowrap;
+        z-index: 20;
+      }
+
+      /* ไฮไลท์คำที่กำลังพิมพ์ถูก */
+      .highlight {
+        color: #00ff41;
+        text-shadow: 0 0 10px #00ff41;
+      }
+
+      /* Input Box */
+      #input-display {
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 30px; /* ตัวใหญ่ขึ้น */
+        font-weight: bold;
+        color: #00ff41;
+        border: 3px solid #00ff41;
+        padding: 10px 30px;
+        background: #000;
+        min-width: 250px;
+        text-align: center;
+        border-radius: 10px;
+        z-index: 30;
+        box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+      }
+
+      .home-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 100;
+        background: #333;
+        color: white;
+        padding: 8px 15px;
+        text-decoration: none;
+        border-radius: 5px;
+        font-family: "Kanit";
+        border: 1px solid #555;
+      }
+
+      #game-over-screen {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.95);
+        z-index: 50;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+      }
+      #restart-btn {
+        padding: 15px 40px;
+        font-size: 24px;
+        cursor: pointer;
+        background: #00ff41;
+        border: none;
+        font-weight: bold;
+        border-radius: 50px;
+        margin-top: 20px;
+        box-shadow: 0 0 20px #00ff41;
+        color: black;
+        font-family: "Kanit";
+      }
+
+      </script>
+    <style>
+        /* Animation ตอนพิมพ์ถูก */
+        @keyframes pop {
+        0% {
+          transform: translateX(-50%) scale(1);
+        }
+        50% {
+          transform: translateX(-50%) scale(1.1);
+        }
+        100% {
+          transform: translateX(-50%) scale(1);
+        }
+      }
+      .pop-anim {
+        animation: pop 0.1s ease-in-out;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="/" class="home-btn">🏠 Home</a>
+
+    <div id="ui-layer">
+      <div class="hud-box">
+        <h1>TYPE DEFENSE</h1>
+        <div class="stat">Score: <span id="score">0</span></div>
+        <div class="stat">HP: <span id="hp" class="danger">❤❤❤</span></div>
+      </div>
+
+      <div class="hud-box">
+        <div style="font-weight: bold; margin-bottom: 5px; font-size: 18px">
+          🏆 Top Scores
+        </div>
+        <div id="leaderboard" style="font-size: 16px; line-height: 1.6">
+          Waiting...
+        </div>
+      </div>
+    </div>
+
+    <div id="game-area">
+      <div id="danger-line"></div>
+    </div>
+
+    <div id="input-display">พิมพ์เลย!</div>
+
+    <div id="game-over-screen">
+      <h1 style="font-size: 60px; color: #ff3838; margin-bottom: 0">
+        GAME OVER
+      </h1>
+      <p style="font-size: 24px; color: #aaa">ภารกิจล้มเหลว</p>
+      <p style="font-size: 30px">
+        คะแนนรวม:
+        <span id="final-score" style="color: #00ff41; font-weight: bold"
+          >0</span
+        >
+      </p>
+      <button id="restart-btn" onclick="location.reload()">
+        เล่นใหม่อีกครั้ง
+      </button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io("/typing", { transports: ["websocket"] });
+
+      // คำศัพท์ (ตัวใหญ่หมด เพื่อให้อ่านง่าย)
+      const wordsList = [
+        "API",
+        "APP",
+        "BOT",
+        "CSS",
+        "DEV",
+        "GIT",
+        "IOS",
+        "KEY",
+        "LOG",
+        "MAC",
+        "NET",
+        "PHP",
+        "RAM",
+        "SQL",
+        "TAG",
+        "URL",
+        "USB",
+        "VUE",
+        "WEB",
+        "XML",
+        "CODE",
+        "DATA",
+        "DISK",
+        "FILE",
+        "GAME",
+        "HOST",
+        "ICON",
+        "JAVA",
+        "LINK",
+        "MAIN",
+        "NODE",
+        "OPEN",
+        "PATH",
+        "ROOT",
+        "RUBY",
+        "SAVE",
+        "TASK",
+        "UNIT",
+        "VOID",
+        "WIFI",
+        "ZOOM",
+        "CLOUD",
+        "DEBUG",
+        "EMAIL",
+        "FLASH",
+        "GROUP",
+        "HTML5",
+        "INPUT",
+        "LOGIN",
+        "MOUSE",
+        "PIXEL",
+        "QUERY",
+        "RESET",
+        "SETUP",
+      ];
+
+      const gameArea = document.getElementById("game-area");
+      const inputDisplay = document.getElementById("input-display");
+      const scoreEl = document.getElementById("score");
+      const hpEl = document.getElementById("hp");
+      const gameOverScreen = document.getElementById("game-over-screen");
+
+      let score = 0;
+      let hp = 3;
+      let currentInput = "";
+      let activeMonsters = [];
+      let gameRunning = true;
+
+      // --- ปรับความยากตรงนี้ ---
+      let spawnRate = 2500; // ออกทุก 3 วินาที (เดิม 2วิ)
+      let fallSpeed = 1; // ความเร็วตก (เดิม 1.5) -> ช้าลงเกือบ 3 เท่า
+      // -----------------------
+
+      function spawnMonster() {
+        if (!gameRunning) return;
+
+        const word = wordsList[Math.floor(Math.random() * wordsList.length)];
+
+        const el = document.createElement("div");
+        el.className = "monster";
+        el.innerText = word;
+
+        // สุ่มตำแหน่ง X (ไม่ให้ตกขอบ)
+        const xPos = Math.random() * (window.innerWidth - 200) + 100;
+        el.style.left = `${xPos}px`;
+        el.style.top = `-60px`;
+
+        gameArea.appendChild(el);
+
+        activeMonsters.push({
+          element: el,
+          word: word,
+          top: -60,
+        });
+
+        // เพิ่มความยากทีละนิด (ช้าๆ)
+        if (score > 0 && score % 50 === 0) {
+          fallSpeed += 0.1; // เพิ่มความเร็วทีละนิดเดียว
+          spawnRate = Math.max(1000, spawnRate - 100);
+        }
+
+        setTimeout(spawnMonster, spawnRate);
+      }
+
+      function gameLoop() {
+        if (!gameRunning) return;
+
+        const dangerLineY = window.innerHeight - 60; // เส้นตาย
+
+        activeMonsters.forEach((monster, index) => {
+          monster.top += fallSpeed;
+          monster.element.style.top = `${monster.top}px`;
+
+          if (monster.top > dangerLineY) {
+            takeDamage(index);
+          }
+        });
+
+        requestAnimationFrame(gameLoop);
+      }
+
+      window.addEventListener("keydown", (e) => {
+        if (!gameRunning) return;
+
+        // พิมพ์ตัวอักษร
+        if (e.key.length === 1 && e.key.match(/[a-z0-9]/i)) {
+          currentInput += e.key.toUpperCase();
+        } else if (e.key === "Backspace") {
+          currentInput = currentInput.slice(0, -1);
+        }
+
+        updateInputDisplay();
+        checkMatch();
+      });
+
+      function updateInputDisplay() {
+        inputDisplay.innerText = currentInput || "_";
+
+        activeMonsters.forEach((m) => {
+          if (m.word.startsWith(currentInput)) {
+            // ไฮไลท์สีเขียว
+            const matchPart = `<span class="highlight">${m.word.substr(
+              0,
+              currentInput.length
+            )}</span>`;
+            const restPart = m.word.substr(currentInput.length);
+            m.element.innerHTML = matchPart + restPart;
+            m.element.style.borderColor = "#00ff41";
+            m.element.style.transform = "translateX(-50%) scale(1.1)"; // ขยายใหญ่ขึ้นนิดนึงเมื่อพิมพ์ถูก
+          } else {
+            m.element.innerText = m.word;
+            m.element.style.borderColor = "#555";
+            m.element.style.transform = "translateX(-50%) scale(1)";
+          }
+        });
+      }
+
+      function checkMatch() {
+        const matchIndex = activeMonsters.findIndex(
+          (m) => m.word === currentInput
+        );
+
+        if (matchIndex !== -1) {
+          const monster = activeMonsters[matchIndex];
+
+          // เอฟเฟกต์ทำลาย
+          monster.element.style.background = "#00ff41";
+          monster.element.style.color = "black";
+          monster.element.innerText = "DESTROYED!";
+          setTimeout(() => monster.element.remove(), 100);
+
+          activeMonsters.splice(matchIndex, 1);
+
+          score += 10;
+          scoreEl.innerText = score;
+          currentInput = "";
+
+          // เอฟเฟกต์ช่อง Input
+          inputDisplay.classList.add("pop-anim");
+          setTimeout(() => inputDisplay.classList.remove("pop-anim"), 100);
+
+          updateInputDisplay();
+          socket.emit("updateScore", score);
+        }
+      }
+
+      function takeDamage(index) {
+        const m = activeMonsters[index];
+        m.element.style.background = "red"; // เปลี่ยนเป็นสีแดงก่อนหาย
+        setTimeout(() => m.element.remove(), 200);
+
+        activeMonsters.splice(index, 1);
+
+        hp--;
+        hpEl.innerText = "❤".repeat(hp);
+
+        document.body.style.boxShadow = "inset 0 0 100px red";
+        setTimeout(() => (document.body.style.boxShadow = "none"), 200);
+
+        if (hp <= 0) {
+          gameOver();
+        }
+      }
+
+      function gameOver() {
+        gameRunning = false;
+        document.getElementById("final-score").innerText = score;
+        gameOverScreen.style.display = "flex";
+      }
+
+      socket.on("updateLeaderboard", (data) => {
+        const lbDiv = document.getElementById("leaderboard");
+        lbDiv.innerHTML = Object.keys(data)
+          .sort((a, b) => data[b] - data[a])
+          .slice(0, 5)
+          .map((id, i) => {
+            let name = id === socket.id ? "YOU" : `Hacker ${id.substr(0, 3)}`;
+            return `<div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding:5px;">
+                                <span>#${i + 1} ${name}</span>
+                                <span style="color:#00ff41">${data[id]}</span>
+                            </div>`;
+          })
+          .join("");
+      });
+
+      // เริ่มเกม
+      setTimeout(spawnMonster, 1000);
+      requestAnimationFrame(gameLoop);
+    </script>
+  </body>
+</html>

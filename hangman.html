@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hangman Neon</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&family=Courier+Prime:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background-color: #0f172a;
+        font-family: "Kanit", sans-serif;
+        color: white;
+        text-align: center;
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+      }
+
+      .home-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        padding: 8px 15px;
+        text-decoration: none;
+        border-radius: 20px;
+        font-size: 14px;
+      }
+
+      h1 {
+        margin: 0 0 20px 0;
+        color: #f43f5e;
+        text-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
+      }
+
+      /* Canvas วาดรูปคน */
+      canvas {
+        background: #1e293b;
+        border-radius: 10px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        margin-bottom: 20px;
+      }
+
+      /* ช่องคำศัพท์ */
+      #word-display {
+        font-family: "Courier Prime", monospace;
+        font-size: 40px;
+        letter-spacing: 10px;
+        margin: 20px 0;
+        min-height: 50px;
+        color: #38bdf8;
+        text-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* คีย์บอร์ด */
+      .keyboard {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+        gap: 8px;
+        max-width: 600px;
+        width: 100%;
+      }
+
+      .key {
+        background: #334155;
+        border: none;
+        color: white;
+        font-size: 20px;
+        padding: 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: 0.2s;
+        font-family: "Courier Prime", monospace;
+        font-weight: bold;
+      }
+      .key:hover:not(:disabled) {
+        background: #475569;
+        transform: translateY(-2px);
+      }
+
+      .key.correct {
+        background: #22c55e;
+        box-shadow: 0 0 10px #22c55e;
+      }
+      .key.wrong {
+        background: #ef4444;
+        opacity: 0.5;
+      }
+      .key:disabled {
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      /* กล่องคำใบ้ */
+      #category-hint {
+        color: #94a3b8;
+        margin-bottom: 10px;
+        font-size: 18px;
+      }
+
+      /* Popup จบเกม */
+      #overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.95);
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 100;
+      }
+      #result-title {
+        font-size: 50px;
+        margin-bottom: 10px;
+        font-weight: 800;
+      }
+      #word-reveal {
+        font-size: 24px;
+        color: #38bdf8;
+        margin-bottom: 30px;
+      }
+      .btn-restart {
+        padding: 15px 40px;
+        font-size: 20px;
+        border: none;
+        border-radius: 50px;
+        background: #f43f5e;
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 0 20px rgba(244, 63, 94, 0.5);
+      }
+    </style>
+  </head>
+  <body>
+    <a href="/" class="home-btn">🏠 Home</a>
+    <h1>HANGMAN NEON</h1>
+
+    <div id="category-hint">หมวดหมู่: โปรแกรมมิ่ง</div>
+
+    <canvas id="hangmanCanvas" width="200" height="250"></canvas>
+
+    <div id="word-display">_ _ _ _ _</div>
+
+    <div class="keyboard" id="keyboard"></div>
+
+    <div id="overlay">
+      <div id="result-title">GAME OVER</div>
+      <div id="word-reveal">คำตอบคือ: NODEJS</div>
+      <button class="btn-restart" onclick="location.reload()">เล่นใหม่</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io("/hangman", { transports: ["websocket"] });
+
+      const canvas = document.getElementById("hangmanCanvas");
+      const ctx = canvas.getContext("2d");
+      const wordDisplay = document.getElementById("word-display");
+      const keyboardDiv = document.getElementById("keyboard");
+      const overlay = document.getElementById("overlay");
+      const resultTitle = document.getElementById("result-title");
+      const wordReveal = document.getElementById("word-reveal");
+      const catHint = document.getElementById("category-hint");
+
+      // สร้างแป้นพิมพ์ A-Z
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      alphabet.split("").forEach((letter) => {
+        const btn = document.createElement("button");
+        btn.className = "key";
+        btn.id = `key-${letter}`;
+        btn.innerText = letter;
+        btn.onclick = () => guess(letter);
+        keyboardDiv.appendChild(btn);
+      });
+
+      // ส่งตัวทายไป Server
+      function guess(letter) {
+        socket.emit("guess", letter);
+        document.getElementById(`key-${letter}`).disabled = true; // กดแล้วห้ามกดซ้ำ
+      }
+
+      // รับข้อมูลอัปเดตจาก Server
+      socket.on(
+        "updateGame",
+        ({
+          displayWord,
+          wrongGuesses,
+          maxLives,
+          category,
+          isGameOver,
+          win,
+          fullWord,
+        }) => {
+          // 1. อัปเดตคำศัพท์ ( _ A _ _ E )
+          wordDisplay.innerText = displayWord;
+          catHint.innerText = `หมวดหมู่: ${category}`;
+
+          // 2. วาดรูปคนตามจำนวนครั้งที่ผิด
+          drawHangman(wrongGuesses);
+
+          // 3. จบเกม
+          if (isGameOver) {
+            overlay.style.display = "flex";
+            if (win) {
+              resultTitle.innerText = "YOU SURVIVED!";
+              resultTitle.style.color = "#22c55e";
+            } else {
+              resultTitle.innerText = "GAME OVER";
+              resultTitle.style.color = "#ef4444";
+            }
+            wordReveal.innerText = `คำตอบคือ: ${fullWord}`;
+          }
+        }
+      );
+
+      // รับผลการกดปุ่ม (ถูก/ผิด) เพื่อเปลี่ยนสีปุ่ม
+      socket.on("guessResult", ({ letter, correct }) => {
+        const btn = document.getElementById(`key-${letter}`);
+        if (btn) {
+          btn.className = `key ${correct ? "correct" : "wrong"}`;
+          btn.disabled = true;
+        }
+      });
+
+      // ฟังก์ชันวาดรูป (วาดทีละส่วนตามความผิด)
+      function drawHangman(errors) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 4;
+        ctx.lineCap = "round";
+
+        // ฐานประหาร (วาดเสมอ)
+        ctx.beginPath();
+        ctx.moveTo(20, 230);
+        ctx.lineTo(180, 230); // พื้น
+        ctx.moveTo(50, 230);
+        ctx.lineTo(50, 20); // เสา
+        ctx.lineTo(120, 20); // คานบน
+        ctx.lineTo(120, 50); // เชือก
+        ctx.stroke();
+
+        // สีตัวคน (นีออน)
+        ctx.strokeStyle = "#f43f5e";
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "#f43f5e";
+
+        if (errors > 0) {
+          ctx.beginPath();
+          ctx.arc(120, 70, 20, 0, Math.PI * 2);
+          ctx.stroke();
+        } // หัว
+        if (errors > 1) {
+          ctx.beginPath();
+          ctx.moveTo(120, 90);
+          ctx.lineTo(120, 160);
+          ctx.stroke();
+        } // ตัว
+        if (errors > 2) {
+          ctx.beginPath();
+          ctx.moveTo(120, 100);
+          ctx.lineTo(90, 130);
+          ctx.stroke();
+        } // แขนซ้าย
+        if (errors > 3) {
+          ctx.beginPath();
+          ctx.moveTo(120, 100);
+          ctx.lineTo(150, 130);
+          ctx.stroke();
+        } // แขนขวา
+        if (errors > 4) {
+          ctx.beginPath();
+          ctx.moveTo(120, 160);
+          ctx.lineTo(90, 200);
+          ctx.stroke();
+        } // ขาซ้าย
+        if (errors > 5) {
+          ctx.beginPath();
+          ctx.moveTo(120, 160);
+          ctx.lineTo(150, 200);
+          ctx.stroke();
+        } // ขาขวา
+
+        // หน้าตาตอนตาย (X X)
+        if (errors >= 6) {
+          ctx.lineWidth = 2;
+          // ตาซ้าย
+          ctx.beginPath();
+          ctx.moveTo(112, 65);
+          ctx.lineTo(118, 71);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(118, 65);
+          ctx.lineTo(112, 71);
+          ctx.stroke();
+          // ตาขวา
+          ctx.beginPath();
+          ctx.moveTo(122, 65);
+          ctx.lineTo(128, 71);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(128, 65);
+          ctx.lineTo(122, 71);
+          ctx.stroke();
+        }
+      }
+
+      // เริ่มต้นวาดฐานเปล่าๆ
+      drawHangman(0);
+    </script>
+  </body>
+</html>

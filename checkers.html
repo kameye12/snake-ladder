@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkers (หมากฮอส)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Kanit", sans-serif;
+        text-align: center;
+        background: #5d4037;
+        color: white;
+        margin: 0;
+        padding: 20px;
+      }
+
+      .home-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.3);
+        color: white;
+        padding: 5px 15px;
+        border-radius: 15px;
+        text-decoration: none;
+        font-size: 14px;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+        color: #d7ccc8;
+        text-shadow: 2px 2px #3e2723;
+      }
+      #status {
+        font-size: 1.2rem;
+        margin-bottom: 15px;
+        color: #ffcc80;
+        min-height: 30px;
+      }
+      #role-display {
+        color: #bcaaa4;
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+
+      /* กระดานหมากฮอส */
+      #board {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(8, 1fr);
+        width: 90vw;
+        max-width: 400px; /* จำกัดขนาดไม่ให้ใหญ่เกิน */
+        aspect-ratio: 1 / 1;
+        margin: 0 auto;
+        border: 8px solid #3e2723;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+      }
+
+      .cell {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .cell.light {
+        background-color: #d7ccc8;
+      }
+      .cell.dark {
+        background-color: #5d4037;
+      }
+
+      /* ไฮไลท์ช่องที่เลือก */
+      .cell.selected {
+        background-color: #ffb74d !important;
+      }
+
+      /* ตัวหมาก */
+      .piece {
+        width: 70%;
+        height: 70%;
+        border-radius: 50%;
+        box-shadow: 0 3px 5px rgba(0, 0, 0, 0.5);
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.2s;
+      }
+      .piece:hover {
+        transform: scale(1.1);
+      }
+
+      .piece.red {
+        background: #e53935;
+        border: 2px solid #b71c1c;
+      }
+      .piece.white {
+        background: #f5f5f5;
+        border: 2px solid #bdbdbd;
+      }
+
+      /* หมากที่เป็นฮอส (King) */
+      .piece.king::after {
+        content: "👑";
+        font-size: 16px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      #resetBtn {
+        margin-top: 20px;
+        padding: 10px 20px;
+        background: #8d6e63;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="/" class="home-btn">🏠 กลับ</a>
+
+    <h1>♚ หมากฮอส ♔</h1>
+    <div id="role-display">กำลังเชื่อมต่อ...</div>
+    <div id="status">รอคู่แข่ง...</div>
+
+    <div id="board"></div>
+
+    <button id="resetBtn">เริ่มเกมใหม่</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io("/checkers", { transports: ["websocket"] });
+
+      const boardEl = document.getElementById("board");
+      const statusEl = document.getElementById("status");
+      const roleEl = document.getElementById("role-display");
+      const resetBtn = document.getElementById("resetBtn");
+
+      let selectedIndex = null;
+      let myRole = null; // 'red' หรือ 'white'
+
+      // สร้างกระดาน 8x8 (64 ช่อง)
+      for (let i = 0; i < 64; i++) {
+        const cell = document.createElement("div");
+        const row = Math.floor(i / 8);
+        const col = i % 8;
+        // สลับสีช่อง (ดำ/ขาว)
+        const isDark = (row + col) % 2 === 1;
+        cell.className = `cell ${isDark ? "dark" : "light"}`;
+        cell.dataset.index = i;
+
+        // คลิกเพื่อเดิน
+        cell.addEventListener("click", () => handleCellClick(i));
+        boardEl.appendChild(cell);
+      }
+
+      function handleCellClick(index) {
+        // ถ้าไม่ใช่ตาเรา หรือเป็นคนดู ห้ามกด
+        if (
+          statusEl.innerText.indexOf("ตาของคุณ") === -1 &&
+          statusEl.innerText.indexOf("ชนะ") === -1
+        )
+          return;
+
+        // ส่งข้อมูลไป Server ว่าเราจะเลือก หรือ จะเดิน
+        if (selectedIndex === null) {
+          // ยังไม่ได้เลือกตัว -> ส่งคำสั่งเลือก
+          socket.emit("selectPiece", index);
+        } else {
+          // เลือกตัวไว้แล้ว -> ส่งคำสั่งเดินไปช่องใหม่ (หรือเลือกใหม่)
+          socket.emit("makeMove", { from: selectedIndex, to: index });
+          selectedIndex = null; // รีเซ็ตการเลือกฝั่งเราก่อน (เดี๋ยว server ส่ง update มา)
+          document
+            .querySelectorAll(".cell")
+            .forEach((c) => c.classList.remove("selected"));
+        }
+      }
+
+      // อัปเดตกระดานจาก Server
+      socket.on("updateBoard", ({ board, turn }) => {
+        const cells = document.querySelectorAll(".cell");
+        cells.forEach((cell, idx) => {
+          cell.innerHTML = ""; // ล้างตัวเก่า
+          cell.classList.remove("selected");
+
+          if (board[idx]) {
+            const p = document.createElement("div");
+            p.className = `piece ${board[idx].color} ${
+              board[idx].isKing ? "king" : ""
+            }`;
+            cell.appendChild(p);
+          }
+        });
+
+        // บอกสถานะ
+        if (myRole === "spectator") {
+          statusEl.innerText = `ตาของฝ่าย: ${turn === "red" ? "แดง" : "ขาว"}`;
+        } else {
+          if (turn === myRole) {
+            statusEl.innerText = "ตาของคุณ! (เลือกตัวเดิน)";
+            statusEl.style.color = "#81c784";
+          } else {
+            statusEl.innerText = "รอฝ่ายตรงข้าม...";
+            statusEl.style.color = "#ffcc80";
+          }
+        }
+      });
+
+      // ไฮไลท์ช่องที่เลือก (Server บอกว่าเลือกได้)
+      socket.on("pieceSelected", (index) => {
+        selectedIndex = index;
+        document
+          .querySelectorAll(".cell")
+          .forEach((c) => c.classList.remove("selected"));
+        document
+          .querySelector(`.cell[data-index="${index}"]`)
+          .classList.add("selected");
+      });
+
+      socket.on("assignRole", (role) => {
+        myRole = role;
+        roleEl.innerText =
+          role === "spectator"
+            ? "คุณเป็นคนดู"
+            : `คุณเล่นสี: ${role === "red" ? "แดง (เริ่มก่อน)" : "ขาว"}`;
+      });
+
+      socket.on("gameOver", ({ winner }) => {
+        statusEl.innerText = `จบเกม! ผู้ชนะคือ ${
+          winner === "red" ? "สีแดง" : "สีขาว"
+        }`;
+        resetBtn.style.display = "inline-block";
+      });
+
+      resetBtn.addEventListener("click", () => socket.emit("resetGame"));
+    </script>
+  </body>
+</html>

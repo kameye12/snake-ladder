@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Breakout Neon</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0f172a;
+        font-family: "Kanit", sans-serif;
+        color: white;
+        overflow: hidden; /* ป้องกัน Scroll */
+        touch-action: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+      }
+
+      .home-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        padding: 8px 15px;
+        text-decoration: none;
+        border-radius: 20px;
+        font-size: 14px;
+        z-index: 100;
+        backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      /* กล่อง UI คะแนน */
+      #ui-container {
+        width: 100%;
+        max-width: 480px;
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 20px;
+        box-sizing: border-box;
+        margin-bottom: 5px;
+      }
+      .stat-box {
+        font-size: 18px;
+        font-weight: bold;
+        text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+      }
+
+      /* ตัวเกม Canvas */
+      canvas {
+        background: #1e293b;
+        border: 2px solid #334155;
+        border-radius: 10px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        max-width: 95%; /* ย่อลงนิดนึงถ้าจอมือถือเล็กมาก */
+        cursor: none; /* ซ่อนเมาส์ตอนเล่นเพื่อให้ดูเหมือนเราจับแป้น */
+      }
+
+      /* หน้าจอ Game Over / Win */
+      #overlay-screen {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.9);
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+      h1 {
+        font-size: 40px;
+        margin: 0 0 10px 0;
+        text-transform: uppercase;
+      }
+
+      .btn-restart {
+        padding: 15px 40px;
+        font-size: 20px;
+        border: none;
+        border-radius: 50px;
+        background: linear-gradient(90deg, #8b5cf6, #d946ef);
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 0 15px rgba(217, 70, 239, 0.5);
+        font-family: "Kanit";
+        margin-top: 20px;
+      }
+
+      /* Leaderboard เล็กๆ ด้านล่าง */
+      #leaderboard {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #94a3b8;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 10px;
+        border-radius: 10px;
+        width: 90%;
+        max-width: 400px;
+      }
+      .lb-item {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid #333;
+        padding: 2px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="/" class="home-btn">🏠 Home</a>
+
+    <div id="ui-container">
+      <div class="stat-box">
+        SCORE: <span id="score" style="color: #38bdf8">0</span>
+      </div>
+      <div class="stat-box">
+        LIVES: <span id="lives" style="color: #f43f5e">3</span>
+      </div>
+    </div>
+
+    <canvas id="gameCanvas" width="480" height="600"></canvas>
+
+    <div id="leaderboard">
+      <div style="text-align: center; font-weight: bold; margin-bottom: 5px">
+        🏆 TOP PLAYERS
+      </div>
+      <div id="lb-list">Connecting...</div>
+    </div>
+
+    <div id="overlay-screen">
+      <h1 id="end-title">GAME OVER</h1>
+      <div style="font-size: 20px">Score: <span id="final-score">0</span></div>
+      <button class="btn-restart" onclick="startGame()">PLAY AGAIN</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io("/breakout", { transports: ["websocket"] });
+
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const scoreEl = document.getElementById("score");
+      const livesEl = document.getElementById("lives");
+      const overlay = document.getElementById("overlay-screen");
+      const endTitle = document.getElementById("end-title");
+      const finalScoreEl = document.getElementById("final-score");
+
+      // --- Game Variables ---
+      let score = 0;
+      let lives = 3;
+      let isRunning = false;
+
+      // Ball properties
+      const ballRadius = 8;
+      let x, y, dx, dy;
+
+      // Paddle properties
+      const paddleHeight = 12;
+      const paddleWidth = 85;
+      let paddleX = (canvas.width - paddleWidth) / 2;
+
+      // Brick properties
+      const brickRowCount = 6;
+      const brickColumnCount = 5;
+      const brickPadding = 10;
+      const brickOffsetTop = 50;
+      const brickOffsetLeft = 35;
+      const brickWidth = 70; // (480 - (35*2) - (10*4)) / 5 = ~70
+      const brickHeight = 20;
+
+      // สีของอิฐแต่ละแถว (Neon Style)
+      const brickColors = [
+        "#ef4444",
+        "#f97316",
+        "#eab308",
+        "#22c55e",
+        "#3b82f6",
+        "#a855f7",
+      ];
+
+      let bricks = [];
+
+      function initBricks() {
+        bricks = [];
+        for (let c = 0; c < brickColumnCount; c++) {
+          bricks[c] = [];
+          for (let r = 0; r < brickRowCount; r++) {
+            bricks[c][r] = { x: 0, y: 0, status: 1 };
+          }
+        }
+      }
+
+      // --- Controls ---
+      // Mouse & Touch Movement logic
+      function movePaddle(clientX) {
+        // คำนวณตำแหน่งสัมพัทธ์กับ Canvas (เผื่อจอมือถือย่อ Canvas ลง)
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+
+        let relativeX = (clientX - rect.left) * scaleX;
+
+        if (relativeX > 0 && relativeX < canvas.width) {
+          paddleX = relativeX - paddleWidth / 2;
+        }
+      }
+
+      document.addEventListener(
+        "mousemove",
+        (e) => movePaddle(e.clientX),
+        false
+      );
+
+      document.addEventListener(
+        "touchmove",
+        (e) => {
+          e.preventDefault(); // กันหน้าจอเลื่อน
+          movePaddle(e.touches[0].clientX);
+        },
+        { passive: false }
+      );
+
+      // --- Drawing Functions ---
+      function drawBall() {
+        ctx.beginPath();
+        ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.shadowBlur = 10; // แสงเรืองรอง
+        ctx.shadowColor = "white";
+        ctx.closePath();
+        ctx.shadowBlur = 0;
+      }
+
+      function drawPaddle() {
+        ctx.beginPath();
+        ctx.roundRect(
+          paddleX,
+          canvas.height - paddleHeight - 10,
+          paddleWidth,
+          paddleHeight,
+          5
+        );
+        ctx.fillStyle = "#38bdf8";
+        ctx.fill();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "#38bdf8";
+        ctx.closePath();
+        ctx.shadowBlur = 0;
+      }
+
+      function drawBricks() {
+        for (let c = 0; c < brickColumnCount; c++) {
+          for (let r = 0; r < brickRowCount; r++) {
+            if (bricks[c][r].status === 1) {
+              const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+              const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+              bricks[c][r].x = brickX;
+              bricks[c][r].y = brickY;
+
+              ctx.beginPath();
+              ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 3);
+              ctx.fillStyle = brickColors[r];
+              ctx.fill();
+              ctx.closePath();
+            }
+          }
+        }
+      }
+
+      function collisionDetection() {
+        for (let c = 0; c < brickColumnCount; c++) {
+          for (let r = 0; r < brickRowCount; r++) {
+            const b = bricks[c][r];
+            if (b.status === 1) {
+              if (
+                x > b.x &&
+                x < b.x + brickWidth &&
+                y > b.y &&
+                y < b.y + brickHeight
+              ) {
+                dy = -dy; // เด้งกลับ
+                b.status = 0; // อิฐหาย
+                score += 10;
+                scoreEl.innerText = score;
+                socket.emit("updateScore", score);
+
+                // เช็คชนะ (คะแนนเต็ม)
+                if (score === brickRowCount * brickColumnCount * 10) {
+                  gameOver(true);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      function draw() {
+        if (!isRunning) return;
+
+        // เคลียร์ภาพเก่า
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawBricks();
+        drawBall();
+        drawPaddle();
+        collisionDetection();
+
+        // ชนขอบซ้ายขวา
+        if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+          dx = -dx;
+        }
+
+        // ชนขอบบน
+        if (y + dy < ballRadius) {
+          dy = -dy;
+        } else if (y + dy > canvas.height - ballRadius - 10) {
+          // ถึงพื้นล่าง (โซนไม้ตี)
+          if (x > paddleX && x < paddleX + paddleWidth) {
+            // ชน Paddle: เด้งกลับ + เอียงตามจุดที่ชน
+            let hitPoint = x - (paddleX + paddleWidth / 2);
+            dx = hitPoint * 0.15; // ถ้าชนขอบไม้จะเด้งเอียงแรงขึ้น
+            dy = -Math.abs(dy); // เด้งขึ้นเสมอ
+          } else {
+            // รับพลาด (ตกพื้น)
+            lives--;
+            livesEl.innerText = lives;
+            if (!lives) {
+              gameOver(false);
+            } else {
+              // รีเซ็ตลูกบอลแต่ไม่รีเซ็ตคะแนน
+              resetBall();
+            }
+          }
+        }
+
+        x += dx;
+        y += dy;
+
+        requestAnimationFrame(draw);
+      }
+
+      function resetBall() {
+        x = canvas.width / 2;
+        y = canvas.height - 30;
+        // สุ่มทิศทางเริ่มต้นซ้ายหรือขวา
+        dx = 3 * (Math.random() < 0.5 ? 1 : -1);
+        dy = -5; // ความเร็วแนวตั้งเริ่มต้น
+      }
+
+      function startGame() {
+        overlay.style.display = "none";
+        score = 0;
+        lives = 3;
+        scoreEl.innerText = score;
+        livesEl.innerText = lives;
+        initBricks();
+        resetBall();
+        isRunning = true;
+        draw();
+      }
+
+      function gameOver(win) {
+        isRunning = false;
+        endTitle.innerText = win ? "YOU WIN!" : "GAME OVER";
+        endTitle.style.color = win ? "#22c55e" : "#ef4444";
+        finalScoreEl.innerText = score;
+        overlay.style.display = "flex";
+      }
+
+      // Socket Leaderboard
+      socket.on("updateLeaderboard", (scores) => {
+        const list = Object.entries(scores)
+          .sort((a, b) => b[1] - a[1]) // เรียงมากไปน้อย
+          .slice(0, 3) // เอาแค่ Top 3
+          .map(
+            ([id, sc], i) =>
+              `<div class="lb-item"><span>${i + 1}. ${
+                id === socket.id ? "YOU" : "Player"
+              }</span><span>${sc}</span></div>`
+          )
+          .join("");
+        document.getElementById("lb-list").innerHTML = list;
+      });
+
+      // เริ่มเกมครั้งแรก
+      startGame();
+    </script>
+  </body>
+</html>

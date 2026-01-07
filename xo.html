@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tic-Tac-Toe (XO)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Kanit", sans-serif;
+        text-align: center;
+        background: #2c3e50;
+        color: white;
+        margin: 0;
+        padding: 20px;
+      }
+
+      /* ปุ่มกลับ */
+      .home-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.3);
+        color: white;
+        padding: 5px 15px;
+        border-radius: 15px;
+        text-decoration: none;
+        font-size: 14px;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+        color: #ecf0f1;
+      }
+      #status {
+        font-size: 1.2rem;
+        margin-bottom: 20px;
+        color: #f1c40f;
+        min-height: 30px;
+      }
+
+      /* กระดาน XO */
+      #board {
+        display: grid;
+        grid-template-columns: repeat(3, 100px);
+        grid-template-rows: repeat(3, 100px);
+        gap: 10px;
+        margin: 0 auto;
+        width: 320px;
+      }
+
+      .cell {
+        background: #34495e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4rem;
+        font-weight: bold;
+        cursor: pointer;
+        border-radius: 10px;
+        user-select: none;
+        transition: background 0.2s;
+      }
+      .cell:hover {
+        background: #3e5871;
+      }
+      .cell.x {
+        color: #e74c3c;
+      } /* สีแดงสำหรับ X */
+      .cell.o {
+        color: #3498db;
+      } /* สีฟ้าสำหรับ O */
+
+      /* ปุ่มรีเซ็ต */
+      #resetBtn {
+        margin-top: 30px;
+        padding: 10px 30px;
+        font-size: 18px;
+        background: #e67e22;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        display: none; /* ซ่อนไว้ก่อน */
+        font-family: "Kanit";
+      }
+
+      /* Responsive */
+      @media (max-width: 350px) {
+        #board {
+          grid-template-columns: repeat(3, 80px);
+          grid-template-rows: repeat(3, 80px);
+          width: 260px;
+        }
+        .cell {
+          font-size: 3rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a href="/" class="home-btn">🏠 กลับ</a>
+
+    <h1>❌ เกม XO ออนไลน์ ⭕</h1>
+    <div id="status">กำลังเชื่อมต่อ...</div>
+    <div id="role-display" style="margin-bottom: 10px; color: #95a5a6"></div>
+
+    <div id="board">
+      <div class="cell" data-index="0"></div>
+      <div class="cell" data-index="1"></div>
+      <div class="cell" data-index="2"></div>
+      <div class="cell" data-index="3"></div>
+      <div class="cell" data-index="4"></div>
+      <div class="cell" data-index="5"></div>
+      <div class="cell" data-index="6"></div>
+      <div class="cell" data-index="7"></div>
+      <div class="cell" data-index="8"></div>
+    </div>
+
+    <button id="resetBtn">เล่นใหม่อีกครั้ง</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io("/xo", { transports: ["websocket"] }); // เชื่อมต่อห้อง /xo
+
+      const statusEl = document.getElementById("status");
+      const roleEl = document.getElementById("role-display");
+      const cells = document.querySelectorAll(".cell");
+      const resetBtn = document.getElementById("resetBtn");
+      let myRole = null; // 'X' หรือ 'O' หรือ 'spectator'
+
+      // เมื่อเริ่มเกมหรืออัปเดตกระดาน
+      socket.on("updateBoard", ({ board, turn, players }) => {
+        // วาดกระดาน
+        board.forEach((val, idx) => {
+          cells[idx].innerText = val || "";
+          cells[idx].className = "cell " + (val ? val.toLowerCase() : "");
+        });
+
+        // บอกสถานะเทิร์น
+        if (turn) {
+          statusEl.innerText = `ตาของฝั่ง: ${turn}`;
+          statusEl.style.color = turn === myRole ? "#2ecc71" : "#f1c40f"; // เขียวถ้าตาเรา
+        }
+      });
+
+      // รับบทบาท (X หรือ O)
+      socket.on("assignRole", (role) => {
+        myRole = role;
+        if (role === "spectator") {
+          roleEl.innerText = "คุณเป็นคนดู (ห้องเต็ม)";
+        } else {
+          roleEl.innerText = `คุณเล่นเป็น: ${role}`;
+        }
+      });
+
+      // จบเกม
+      socket.on("gameOver", ({ winner, draw }) => {
+        if (draw) {
+          statusEl.innerText = "เสมอ! (Draw)";
+          statusEl.style.color = "white";
+        } else {
+          statusEl.innerText = `ผู้ชนะคือ: ${winner} 🎉`;
+          statusEl.style.color = "#e74c3c";
+        }
+        resetBtn.style.display = "inline-block";
+      });
+
+      // เกมรีเซ็ต
+      socket.on("gameReset", () => {
+        resetBtn.style.display = "none";
+        statusEl.innerText = "เริ่มเกมใหม่!";
+      });
+
+      // ส่งคำสั่งเดิน
+      cells.forEach((cell) => {
+        cell.addEventListener("click", () => {
+          const index = cell.getAttribute("data-index");
+          socket.emit("makeMove", index);
+        });
+      });
+
+      resetBtn.addEventListener("click", () => {
+        socket.emit("resetGame");
+      });
+    </script>
+  </body>
+</html>
