@@ -4,7 +4,14 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+
+// --- แก้ไขจุดที่ 1: เพิ่มการตั้งค่า CORS ---
+const io = new Server(server, {
+    cors: {
+        origin: "*", // อนุญาตให้เชื่อมต่อจากทุกที่ (แก้ปัญหาเข้าไม่ได้)
+        methods: ["GET", "POST"]
+    }
+});
 
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
@@ -15,7 +22,7 @@ let players = [];
 let isGameStarted = false;
 let currentTurnIndex = 0;
 
-// --- แผนที่ งู และ บันได (เพิ่มจุดให้เยอะขึ้น!) ---
+// --- แผนที่ งู และ บันได ---
 const jumps = {
     // บันได (ขึ้น)
     2: 23, 8: 12, 17: 93, 29: 54, 32: 51, 39: 80, 70: 89, 75: 96,
@@ -26,10 +33,7 @@ const jumps = {
 const colors = ['#ff3838', '#ff9f43', '#f368e0', '#0abde3', '#10ac84', '#5f27cd'];
 
 io.on('connection', (socket) => {
-    // ... (ส่วน Login และ Start Game เหมือนเดิม ไม่ต้องแก้) ...
-    // เพื่อความสั้น ผมขอละส่วน Login ไว้ (ใช้โค้ดเดิมได้เลย) 
-    // แต่ให้ก๊อปปี้ส่วน rollDice ไปทับ เพราะต้องใช้ตัวแปร jumps ใหม่
-
+    
     socket.on('joinGame', (playerName) => {
         if (isGameStarted) return socket.emit('notification', 'เกมเริ่มไปแล้ว!');
         const newPlayer = {
