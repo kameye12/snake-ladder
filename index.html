@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>บันไดงู V4.2 (Final Perfect)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Kanit", sans-serif;
+        text-align: center;
+        background: #e2e1e0;
+        margin: 0;
+        padding: 20px;
+      }
+
+      .screen {
+        background: white;
+        width: 90%;
+        max-width: 450px;
+        margin: 30px auto;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      }
+      #game-screen {
+        max-width: 600px;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+      }
+      #lobby-screen {
+        display: none;
+      }
+
+      input,
+      button {
+        font-family: "Kanit";
+        margin: 5px 0;
+      }
+      input[type="text"] {
+        padding: 12px;
+        width: 80%;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+      }
+      .btn-main {
+        padding: 15px 30px;
+        font-size: 20px;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        width: 100%;
+      }
+      .btn-green {
+        background: #2ed573;
+      }
+      .btn-blue {
+        background: #007bff;
+      }
+      .btn-main:disabled {
+        background: #ccc;
+      }
+
+      /* --- Board Styles --- */
+      #board-container {
+        position: relative;
+        margin: 20px 0;
+        border: 8px solid #4a4a4a;
+        border-radius: 5px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        background: #333;
+        user-select: none;
+      }
+      #board {
+        display: grid;
+        grid-template-columns: repeat(10, 50px);
+        grid-template-rows: repeat(10, 50px);
+      }
+      .cell {
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: rgba(0, 0, 0, 0.4);
+        font-weight: bold;
+        z-index: 1;
+      }
+      /* ลายตารางพื้นฐาน */
+      .cell:nth-child(odd) {
+        background-color: #f7f1e3;
+      }
+      .cell:nth-child(even) {
+        background-color: #d1ccc0;
+      }
+
+      /* --- เพิ่มสีไฮไลท์กลับมาแล้วครับ --- */
+      .cell.ladder-start {
+        background-color: #c8f7c5 !important; /* เขียวพาสเทล */
+        border: 2px solid #2ed573;
+        box-sizing: border-box;
+      }
+      .cell.snake-start {
+        background-color: #ffc5c5 !important; /* แดงพาสเทล */
+        border: 2px solid #ff6b6b;
+        box-sizing: border-box;
+      }
+
+      /* --- SVG Layer --- */
+      #board-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      /* --- Token --- */
+      .token {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        position: absolute;
+        z-index: 100;
+        transition: top 0.6s, left 0.6s;
+      }
+
+      #controls {
+        background: #f1f2f6;
+        padding: 20px;
+        border-radius: 15px;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="login-screen" class="screen">
+      <h1>🐍 บันไดงู V4.2</h1>
+      <input
+        type="text"
+        id="nameInput"
+        placeholder="ชื่อเล่น..."
+        maxlength="10"
+      />
+      <button id="joinBtn" class="btn-main btn-blue">เข้าสู่ Lobby</button>
+    </div>
+
+    <div id="lobby-screen" class="screen">
+      <h2>🏠 ห้องพักนักกีฬา</h2>
+      <ul
+        id="player-list"
+        style="list-style: none; padding: 0; text-align: left"
+      ></ul>
+      <button id="startBtn" class="btn-main btn-green" disabled>
+        รอเพื่อน...
+      </button>
+    </div>
+
+    <div id="game-screen" class="screen">
+      <div id="board-container">
+        <div id="board"></div>
+        <svg id="board-svg">
+          <defs>
+            <marker
+              id="arrow-green"
+              markerWidth="6"
+              markerHeight="6"
+              refX="5"
+              refY="3"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M0,0 L0,6 L6,3 z" fill="#2ed573" />
+            </marker>
+            <marker
+              id="arrow-red"
+              markerWidth="6"
+              markerHeight="6"
+              refX="5"
+              refY="3"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M0,0 L0,6 L6,3 z" fill="#ff6b6b" />
+            </marker>
+          </defs>
+        </svg>
+      </div>
+      <div id="controls">
+        <h2 id="turn-status">รอเริ่ม...</h2>
+        <button id="rollBtn" class="btn-main btn-blue" disabled>
+          🎲 ทอยลูกเต๋า
+        </button>
+        <div id="dice-result" style="margin-top: 10px; font-weight: bold"></div>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+
+      // Elements
+      const screens = {
+        login: document.getElementById("login-screen"),
+        lobby: document.getElementById("lobby-screen"),
+        game: document.getElementById("game-screen"),
+      };
+      const els = {
+        name: document.getElementById("nameInput"),
+        join: document.getElementById("joinBtn"),
+        list: document.getElementById("player-list"),
+        start: document.getElementById("startBtn"),
+        board: document.getElementById("board"),
+        svg: document.getElementById("board-svg"),
+        roll: document.getElementById("rollBtn"),
+        status: document.getElementById("turn-status"),
+        result: document.getElementById("dice-result"),
+      };
+
+      const jumps = {
+        2: 23,
+        8: 12,
+        17: 93,
+        29: 54,
+        32: 51,
+        39: 80,
+        70: 89,
+        75: 96, // Ladders
+        99: 4,
+        92: 76,
+        85: 6,
+        73: 15,
+        61: 18,
+        55: 24,
+        42: 10, // Snakes
+      };
+
+      let cellCoords = {};
+      let latestPlayers = [];
+
+      // สร้างกระดาน
+      for (let i = 1; i <= 100; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.id = `cell-${i}`;
+        cell.innerText = i;
+        // เพิ่ม class สำหรับใส่สี
+        if (jumps[i])
+          cell.classList.add(jumps[i] > i ? "ladder-start" : "snake-start");
+        els.board.appendChild(cell);
+      }
+
+      // --- ฟังก์ชันวาดเส้น SVG ---
+      function drawConnectors() {
+        const oldLines = els.svg.querySelectorAll("line");
+        oldLines.forEach((l) => l.remove());
+
+        for (let [start, end] of Object.entries(jumps)) {
+          const s = document.getElementById(`cell-${start}`);
+          const e = document.getElementById(`cell-${end}`);
+
+          if (s && e) {
+            const x1 = s.offsetLeft + 25;
+            const y1 = s.offsetTop + 25;
+            const x2 = e.offsetLeft + 25;
+            const y2 = e.offsetTop + 25;
+
+            const isLadder = parseInt(end) > parseInt(start);
+            const color = isLadder ? "#2ed573" : "#ff6b6b";
+            const width = isLadder ? 4 : 2;
+            const opacity = 0.5; // เพิ่มความชัดขึ้นนิดหน่อยจาก 0.4 เป็น 0.5
+            const marker = isLadder ? "url(#arrow-green)" : "url(#arrow-red)";
+
+            const line = document.createElementNS(
+              "http://www.w3.org/2000/svg",
+              "line"
+            );
+            line.setAttribute("x1", x1);
+            line.setAttribute("y1", y1);
+            line.setAttribute("x2", x2);
+            line.setAttribute("y2", y2);
+            line.setAttribute("stroke", color);
+            line.setAttribute("stroke-width", width);
+            line.setAttribute("stroke-opacity", opacity);
+            line.setAttribute("stroke-linecap", "round");
+            line.setAttribute("marker-end", marker);
+            if (isLadder) line.setAttribute("stroke-dasharray", "4,4");
+            else line.setAttribute("stroke-dasharray", "2,2");
+
+            els.svg.appendChild(line);
+          }
+        }
+      }
+
+      function updateLayout() {
+        for (let i = 1; i <= 100; i++) {
+          const cell = document.getElementById(`cell-${i}`);
+          if (cell)
+            cellCoords[i] = {
+              top: cell.offsetTop + 10,
+              left: cell.offsetLeft + 10,
+            };
+        }
+        drawConnectors();
+        latestPlayers.forEach((p, idx) => {
+          const t = getOrCreateToken(p.id, p.color);
+          moveTokenTo(t, p.pos);
+          if (latestPlayers.filter((pl) => pl.pos === p.pos).length > 1)
+            t.style.transform = `translate(${idx * 4}px, ${idx * 4}px)`;
+          else t.style.transform = `translate(0,0)`;
+        });
+      }
+      window.addEventListener("resize", updateLayout);
+
+      function getOrCreateToken(id, color) {
+        let t = document.getElementById(`token-${id}`);
+        if (!t) {
+          t = document.createElement("div");
+          t.id = `token-${id}`;
+          t.className = "token";
+          t.style.backgroundColor = color;
+          document.getElementById("board-container").appendChild(t);
+        }
+        return t;
+      }
+      function moveTokenTo(t, pos) {
+        if (cellCoords[pos]) {
+          t.style.top = `${cellCoords[pos].top}px`;
+          t.style.left = `${cellCoords[pos].left}px`;
+        }
+      }
+
+      // --- Logic เกม ---
+      els.join.onclick = () => {
+        if (!els.name.value) return alert("ใส่ชื่อก่อน!");
+        socket.emit("joinGame", els.name.value);
+        els.join.innerText = "...";
+      };
+
+      socket.on("loginSuccess", () => {
+        screens.login.style.display = "none";
+        screens.lobby.style.display = "block";
+      });
+      socket.on("lobbyUpdate", ({ players, hostId }) => {
+        els.list.innerHTML = players
+          .map(
+            (p) =>
+              `<li><span style="width:15px;height:15px;background:${p.color};display:inline-block;border-radius:50%;margin-right:10px;"></span>${p.name}</li>`
+          )
+          .join("");
+        if (socket.id === hostId) {
+          els.start.disabled = players.length < 2;
+          els.start.innerText = players.length < 2 ? "รอคน..." : "เริ่มเกม!";
+          els.start.onclick = () => socket.emit("startGame");
+        } else {
+          els.start.disabled = true;
+          els.start.innerText = "รอหัวหน้าห้อง...";
+        }
+      });
+
+      socket.on("gameStarted", () => {
+        screens.lobby.style.display = "none";
+        screens.game.style.display = "flex";
+        setTimeout(updateLayout, 100);
+      });
+
+      els.roll.onclick = () => socket.emit("rollDice");
+
+      socket.on("animateTurn", (data) => {
+        els.roll.disabled = true;
+        els.status.innerText = `... ${data.msg.split(" ")[0]} เดิน`;
+        els.result.innerText = data.msg;
+        els.result.style.color =
+          data.jumpType === "snake"
+            ? "#ff6b6b"
+            : data.jumpType === "ladder"
+            ? "#2ed573"
+            : "black";
+
+        const t = getOrCreateToken(data.playerId, "gray");
+        moveTokenTo(t, data.midPos);
+        if (data.jumpType) setTimeout(() => moveTokenTo(t, data.finalPos), 800);
+      });
+
+      socket.on("updateState", ({ players, currentTurn, movingPlayerId }) => {
+        latestPlayers = players;
+        players.forEach((p, idx) => {
+          const t = getOrCreateToken(p.id, p.color);
+          t.style.backgroundColor = p.color;
+          if (p.id !== movingPlayerId) {
+            moveTokenTo(t, p.pos);
+            if (players.filter((pl) => pl.pos === p.pos).length > 1)
+              t.style.transform = `translate(${idx * 4}px, ${idx * 4}px)`;
+            else t.style.transform = `translate(0,0)`;
+          }
+        });
+        if (socket.id === currentTurn) {
+          els.status.innerText = "ตาคุณ!";
+          els.roll.disabled = false;
+        } else {
+          els.status.innerText = `รอ ${
+            players.find((p) => p.id === currentTurn)?.name
+          }`;
+          els.roll.disabled = true;
+        }
+      });
+
+      socket.on("gameOver", ({ winner }) =>
+        setTimeout(() => alert(`${winner} ชนะ!`), 500)
+      );
+      socket.on("gameReset", () => location.reload());
+      socket.on("notification", alert);
+    </script>
+  </body>
+</html>
